@@ -4,6 +4,13 @@ import socket
 import time
 import json
 import datetime
+from sqlalchemy import create_engine, desc
+from sqlalchemy.orm import sessionmaker
+from createDatabase import Base, Post
+engine = create_engine('sqlite:///instagram.db')
+Base.metadata.bind = engine
+DBSession = sessionmaker( bind = engine)
+session = DBSession()
 
 class IGBot:
 	def __init__ (self, tag="culvercity"):
@@ -16,7 +23,6 @@ class IGBot:
 		self.foundPosts = {}
 		tenMinutesAgo = datetime.datetime.now() - datetime.timedelta(minutes=self.max_age)
 		self.latestTimestamp = tenMinutesAgo.timestamp()
-
 		self.startServer()
 		self.handleConnection()
 
@@ -90,6 +96,16 @@ class IGBot:
 	def savePosts(self, postDicts):
 		for postDict in postDicts:
 			self.foundPosts[postDict['id']] = postDict
+			newPost = Post( post_id = postDict['id'],
+				  user_id = postDict['user_id'],
+				  link = postDict['link'],
+				  image = postDict['image'],
+				  created_time = postDict['created_time'],
+				  caption = postDict['caption'],
+				  username = postDict['username'])
+			session.add( newPost )
+			session.commit()
+			print("Successfully saved to database")
 		print("saving posts...")
 		print("total posts scraped:",len(self.foundPosts))
 		if postDicts: 
