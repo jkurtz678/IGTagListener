@@ -7,7 +7,7 @@ import datetime
 
 class IGBot:
 	def __init__ (self, tag="culvercity"):
-		self.port = 1234
+		self.port = 5000
 		self.tag = tag
 		self.get_rate = 20
 		self.max_sleep = 5
@@ -23,7 +23,7 @@ class IGBot:
 	#create socket object which listens for client connection at <port>
 	def startServer(self):
 		self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-		self.socket.bind((socket.gethostname(), self.port))
+		self.socket.bind(('', self.port))
 		self.socket.listen(5)
 		print("Listening on port:",  self.port)
 
@@ -35,23 +35,8 @@ class IGBot:
 			print(f"Connection from {address} has been established!")
 			print("Sending new posts from tag:", self.tag)
 
-			#clientsocket.send(bytes("Connecting established with scraper bot", "utf-8"))
 			while True:
 				self.sendNewPosts()
-		'''
-		while True:
-			clientsocket, address = self.socket.accept()
-			print(f"Connection from {address} has been established!")
-
-			posts = self.getNewPosts(tag)
-			print("sending welcome message...");
-			clientsocket.send(bytes("Welcome to the server!", "utf-8"))
-			while True:
-				print("sleeping for 3 seconds");
-				time.sleep(3)
-				print("sending what's up message...")
-				clientsocket.send(bytes("What's up?", "utf-8"))
-		'''
 
 	#Retrieves <get_rate> num of posts from <tag>
 	def scrapeInstagram(self):
@@ -59,9 +44,9 @@ class IGBot:
 		print("Getting maximum", self.get_rate, "new posts...")
 		recPosts = []
 		try: 
-			recPosts = self.instagram.get_medias_by_tag(self.tag, count=self.get_rate, min_timestamp=self.latestTimestamp)
+		    recPosts = self.instagram.get_medias_by_tag(self.tag, count=self.get_rate, min_timestamp=self.latestTimestamp)
 		except Exception as e:
-			print("ERROR:", e)
+		    print("ERROR:", e)
 		print("found", len(recPosts), "posts")
 		recPosts.reverse()
 		return recPosts
@@ -74,7 +59,7 @@ class IGBot:
 		postDict['link'] = post.link
 		postDict['image'] = post.image_high_resolution_url
 		postDict['created_time'] = post.created_time
-		#postDict['caption'] = post.caption
+		postDict['caption'] = post.caption
 		try:
 			account = self.instagram.get_account_by_id(post.owner.identifier)
 			postDict['username'] = account.username
