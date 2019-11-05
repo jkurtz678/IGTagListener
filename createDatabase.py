@@ -10,6 +10,7 @@ class Post(Base):
 	session_start = Column(DateTime)
 	post_id = Column(Integer)
 	user_id = Column(Integer)
+	query = Column(String)
 	link = Column(String)
 	image = Column(String)
 	created_time = Column(String)

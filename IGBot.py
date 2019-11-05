@@ -7,31 +7,39 @@ import datetime
 from sqlalchemy import create_engine, desc
 from sqlalchemy.orm import sessionmaker
 from createDatabase import Base, Post
+from credentials import username_ig, password_ig
 
 class IGBot:
-	def __init__ (self, tag="culvercity"):
+	def __init__ (self, queries):
 		self.port = 5000
-		self.tag = tag
+		self.query_index = 0
 		self.get_rate = 20
-		self.max_sleep = 5
+		self.sleep_time = 5
 		self.max_age = 10
-		self.instagram = Instagram()
+		self.num_errors = 0
+
 		self.foundPosts = {}
 		self.startTime = datetime.datetime.now()
 		tenMinutesAgo = datetime.datetime.now() - datetime.timedelta(minutes=self.max_age)
-		self.latestTimestamp = tenMinutesAgo.timestamp()
+		self.latestTimestamps = [tenMinutesAgo.timestamp() for _ in range(len(queries))]
 
+		self.loginInstagram()
 		self.connectToDatabase()
 		self.startServer()
-		self.handleConnection()
+		self.handleConnection(queries)
+
+	def loginInstagram(self):
+		self.instagram = Instagram()
+		self.instagram.with_credentials(username_ig, password_ig, '.')
+		self.instagram.login()
 
 	#create socket object which listens for client connection at <port>
 	def startServer(self):
 		self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+		self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 		self.socket.bind(('', self.port))
 		self.socket.listen(5)
 		print("Listening on port:",  self.port)
-
 
 	def connectToDatabase(self):
 		engine = create_engine('sqlite:///instagram.db')
@@ -40,34 +48,61 @@ class IGBot:
 		self.session = DBSession()
 
 	#Waits for client socket connection, upon connection begins to scrape
-	def handleConnection(self):
+	def handleConnection(self, queries):
 		print("Waiting for client connection")
 		while True:
 			self.clientsocket, address = self.socket.accept()
 			print(f"Connection from {address} has been established!")
-			print("Sending new posts from tag:", self.tag)
+			print("Queries:", *queries)
+
 
 			while True:
-				self.sendNewPosts()
+				self.sendNewPosts(queries)
 
-	def sendNewPosts(self):
-		recentPosts = self.scrapeInstagram()
+	def sendNewPosts(self, queries):
+		recentPosts = self.scrapeInstagram(queries)
 		postDicts = self.sendPostsToClient(recentPosts)
-		self.savePosts(postDicts)
+		self.savePosts(postDicts, queries)
 		self.waitBeforeNextRequest()
+		self.query_index = (self.query_index + 1) % len(queries)
 
-	#Retrieves <get_rate> num of posts from <tag>
-	def scrapeInstagram(self):
+	#Retrieves <get_rate> num of posts from <queries[self.query_index]>
+	def scrapeInstagram(self, queries):
 		print("\n--------------------------------------------")
-		print("Getting maximum", self.get_rate, "new posts...")
+		print("Query index:", self.query_index)
+		query = queries[self.query_index]
 		recPosts = []
-		try: 
-		    recPosts = self.instagram.get_medias_by_tag(self.tag, count=self.get_rate, min_timestamp=self.latestTimestamp)
-		except Exception as e:
-		    print("ERROR:", e)
-		print("found", len(recPosts), "posts")
+		if query[0] == '#':
+			recPosts = self.scrapeByTag(query[1:])
+		else:
+			recPosts = self.scrapeByLocation(query)
+		
 		recPosts.reverse()
 		return recPosts
+
+	def scrapeByTag(self, tag):
+		print("Scraping instagram by hashtag: " + tag )
+		print("Getting maximum", self.get_rate, "new posts...")
+
+		try: 
+			return self.instagram.get_medias_by_tag(tag, count=self.get_rate, min_timestamp=self.latestTimestamps[self.query_index])
+		except Exception as e:
+			print("ERROR:", e)
+			self.num_errors += 1
+			return []
+
+	def scrapeByLocation(self, loc_id):
+		print("Scraping instagram by location id: " + loc_id)
+		print("Getting maximum", self.get_rate, "new posts...")
+		posts = []
+		try: 
+		   	posts = self.instagram.get_medias_by_location_id(loc_id, count=self.get_rate)
+		except Exception as e:
+			print("ERROR:", e)
+			self.num_errors += 1
+
+		posts = [post for post in posts if post.created_time > self.latestTimestamps[self.query_index]]
+		return posts
 
 	#Convert media objects to dictionaries, scrape usernames from instagram
 	def buildPostDict(self, post):
@@ -83,13 +118,14 @@ class IGBot:
 			postDict['username'] = account.username
 		except Exception as e:
 			print("ERROR: failed to get username", e)
+			self.num_errors += 1
 		
 		return postDict
 
 	#Sends new filtered posts to connected Unity client
 	def sendPostsToClient(self, posts):
 		if posts:
-			print("Sending", len(posts), "points:")
+			print("Found", len(posts), "posts:")
 			postDicts = []
 			for post in posts:
 				postDict = self.buildPostDict(post)
@@ -104,11 +140,12 @@ class IGBot:
 			return []
 
 	#saves new post to foundPosts dict and eventually a database, set newest time
-	def savePosts(self, postDicts):
+	def savePosts(self, postDicts, queries):
 		for postDict in postDicts:
 			self.foundPosts[postDict['id']] = postDict
 			newPost = Post( post_id = postDict['id'],
 				  session_start = self.startTime,
+				  query = queries[self.query_index],
 				  user_id = postDict['user_id'],
 				  link = postDict['link'],
 				  image = postDict['image'],
@@ -117,23 +154,28 @@ class IGBot:
 				  username = postDict['username'])
 			self.session.add( newPost )
 			self.session.commit()
-			print("Successfully saved to database")
-		print("saving posts...")
-		print("total posts scraped:",len(self.foundPosts))
+		print("Successfully posts to database")
+		print("Total posts scraped:",len(self.foundPosts))
+		print("Total errors encountered:", self.num_errors)
 		if postDicts: 
-			self.latestTimestamp = postDicts[-1]['created_time'] + 1
-			epochDiff = datetime.datetime.now().timestamp() - self.latestTimestamp
+			self.latestTimestamps[self.query_index] = postDicts[-1]['created_time'] + 1
+			epochDiff = datetime.datetime.now().timestamp() - self.latestTimestamps[self.query_index]
 			print("Newest post:", "{:.1f}".format(epochDiff/60), "minutes ago")
 
-	#sleep according to <max_sleep>
+	#sleep according to <sleep_time>
 	def waitBeforeNextRequest(self):
-		now = time.localtime().tm_sec % self.max_sleep
-		sleep_time = self.max_sleep - now
-		print("Sleeping", sleep_time, "seconds")
-		time.sleep(sleep_time)
+		print("Sleeping", self.sleep_time, "seconds")
+		time.sleep(self.sleep_time)
 
 if __name__ == "__main__":
+
+	#queries = ['#culvercity', '213420290', '#culvercitystairs']
+	queries = ['#culvercity', '213420290']
+
+	IGBot(queries)
+	'''
     if len(sys.argv) > 1: 
         IGBot(sys.argv[1])
     else:
         IGBot()
+    '''
