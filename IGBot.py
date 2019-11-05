@@ -6,11 +6,8 @@ import json
 import datetime
 from sqlalchemy import create_engine, desc
 from sqlalchemy.orm import sessionmaker
-from createDatabase import Base, Post
-engine = create_engine('sqlite:///instagram.db')
-Base.metadata.bind = engine
-DBSession = sessionmaker( bind = engine)
-session = DBSession()
+from createDatabase import Base
+from Post import Post
 
 class IGBot:
 	def __init__ (self, tag="culvercity"):
@@ -23,6 +20,8 @@ class IGBot:
 		self.foundPosts = {}
 		tenMinutesAgo = datetime.datetime.now() - datetime.timedelta(minutes=self.max_age)
 		self.latestTimestamp = tenMinutesAgo.timestamp()
+
+		self.connectToDatabase()
 		self.startServer()
 		self.handleConnection()
 
@@ -32,6 +31,13 @@ class IGBot:
 		self.socket.bind(('', self.port))
 		self.socket.listen(5)
 		print("Listening on port:",  self.port)
+
+
+	def connectToDatabase(self):
+		engine = create_engine('sqlite:///instagram.db')
+		Base.metadata.bind = engine
+		DBSession = sessionmaker( bind = engine)
+		self.session = DBSession()
 
 	#Waits for client socket connection, upon connection begins to scrape
 	def handleConnection(self):
@@ -43,6 +49,12 @@ class IGBot:
 
 			while True:
 				self.sendNewPosts()
+
+	def sendNewPosts(self):
+		recentPosts = self.scrapeInstagram()
+		postDicts = self.sendPostsToClient(recentPosts)
+		self.savePosts(postDicts)
+		self.waitBeforeNextRequest()
 
 	#Retrieves <get_rate> num of posts from <tag>
 	def scrapeInstagram(self):
@@ -82,7 +94,6 @@ class IGBot:
 			for post in posts:
 				postDict = self.buildPostDict(post)
 				postDicts.append(postDict)
-				#self.clientsocket.send()
 				self.clientsocket.send(bytes(json.dumps(postDict), "utf-8"))
 
 				print("sending dict:", postDict )
@@ -103,8 +114,8 @@ class IGBot:
 				  created_time = postDict['created_time'],
 				  caption = postDict['caption'],
 				  username = postDict['username'])
-			session.add( newPost )
-			session.commit()
+			self.session.add( newPost )
+			self.session.commit()
 			print("Successfully saved to database")
 		print("saving posts...")
 		print("total posts scraped:",len(self.foundPosts))
@@ -119,12 +130,6 @@ class IGBot:
 		sleep_time = self.max_sleep - now
 		print("Sleeping", sleep_time, "seconds")
 		time.sleep(sleep_time)
-
-	def sendNewPosts(self):
-		recentPosts = self.scrapeInstagram()
-		postDicts = self.sendPostsToClient(recentPosts)
-		self.savePosts(postDicts)
-		self.waitBeforeNextRequest()
 
 if __name__ == "__main__":
     if len(sys.argv) > 1: 
