@@ -6,8 +6,7 @@ import json
 import datetime
 from sqlalchemy import create_engine, desc
 from sqlalchemy.orm import sessionmaker
-from createDatabase import Base
-from Post import Post
+from createDatabase import Base, Post
 
 class IGBot:
 	def __init__ (self, tag="culvercity"):
@@ -18,6 +17,7 @@ class IGBot:
 		self.max_age = 10
 		self.instagram = Instagram()
 		self.foundPosts = {}
+		self.startTime = datetime.datetime.now()
 		tenMinutesAgo = datetime.datetime.now() - datetime.timedelta(minutes=self.max_age)
 		self.latestTimestamp = tenMinutesAgo.timestamp()
 
@@ -108,6 +108,7 @@ class IGBot:
 		for postDict in postDicts:
 			self.foundPosts[postDict['id']] = postDict
 			newPost = Post( post_id = postDict['id'],
+				  session_start = self.startTime,
 				  user_id = postDict['user_id'],
 				  link = postDict['link'],
 				  image = postDict['image'],
