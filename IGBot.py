@@ -76,7 +76,7 @@ class IGBot:
 		print("\n--------------------------------------------")
 		print("Executing at:", datetime.datetime.now())
 		print("Session length:", datetime.datetime.now() - self.start_time)
-		print("Query index:", self.query_index)
+		print("Cycle count:", self.num_cycles)
 		query = queries[self.query_index]
 		recPosts = []
 		if query[0] == '#':
@@ -117,9 +117,11 @@ class IGBot:
 		postDict['id'] = post.identifier
 		postDict['user_id'] = post.owner.identifier
 		postDict['link'] = post.link
+		postDict['query'] = queries[self.query_index]
 		postDict['image'] = post.image_high_resolution_url
 		postDict['created_time'] = post.created_time
 		postDict['caption'] = post.caption
+		postDict['session_start'] = self.start_time.timestamp()
 		try:
 			account = self.instagram.get_account_by_id(post.owner.identifier)
 			postDict['username'] = account.username
