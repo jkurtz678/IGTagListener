@@ -75,7 +75,7 @@ class IGBot:
 	def scrapeInstagram(self, queries):
 		print("\n--------------------------------------------")
 		print("Executing at:", datetime.datetime.now())
-		print("Session length:", datetime.datetime.now() - self.start_time())
+		print("Session length:", datetime.datetime.now() - self.start_time)
 		print("Query index:", self.query_index)
 		query = queries[self.query_index]
 		recPosts = []
