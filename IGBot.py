@@ -1,4 +1,5 @@
 from igramscraperFIXED.instagram import Instagram
+import signal
 import sys
 import socket
 import time
@@ -13,18 +14,21 @@ class IGBot:
 	def __init__ (self, queries):
 		self.port = 5000
 		self.query_index = 0
+		self.num_cycles = 0
 		self.get_rate = 20
 		self.sleep_time = 5
 		self.max_age = 10
 		self.num_errors = 0
 
 		self.foundPosts = {}
-		self.startTime = datetime.datetime.now()
+		self.start_time = datetime.datetime.now()
 		tenMinutesAgo = datetime.datetime.now() - datetime.timedelta(minutes=self.max_age)
 		self.latestTimestamps = [tenMinutesAgo.timestamp() for _ in range(len(queries))]
 
 		self.loginInstagram()
 		self.connectToDatabase()
+
+	def run(self):
 		self.startServer()
 		self.handleConnection(queries)
 
@@ -63,12 +67,14 @@ class IGBot:
 		recentPosts = self.scrapeInstagram(queries)
 		postDicts = self.sendPostsToClient(recentPosts)
 		self.savePosts(postDicts, queries)
+		self.num_cycles += 1
 		self.waitBeforeNextRequest()
 		self.query_index = (self.query_index + 1) % len(queries)
 
 	#Retrieves <get_rate> num of posts from <queries[self.query_index]>
 	def scrapeInstagram(self, queries):
 		print("\n--------------------------------------------")
+		print("Executing at:", datetime.datetime.now())
 		print("Query index:", self.query_index)
 		query = queries[self.query_index]
 		recPosts = []
@@ -118,6 +124,7 @@ class IGBot:
 			postDict['username'] = account.username
 		except Exception as e:
 			print("ERROR: failed to get username", e)
+			postDict['username'] = "na"
 			self.num_errors += 1
 		
 		return postDict
@@ -144,7 +151,7 @@ class IGBot:
 		for postDict in postDicts:
 			self.foundPosts[postDict['id']] = postDict
 			newPost = Post( post_id = postDict['id'],
-				  session_start = self.startTime,
+				  session_start = self.start_time,
 				  query = queries[self.query_index],
 				  user_id = postDict['user_id'],
 				  link = postDict['link'],
@@ -169,13 +176,25 @@ class IGBot:
 
 if __name__ == "__main__":
 
-	#queries = ['#culvercity', '213420290', '#culvercitystairs']
-	queries = ['#culvercity', '213420290']
+	queries = ['#culvercity', '213420290', '#culvercitystairs']
+	#queries = ['#culvercity', '213420290']
 
-	IGBot(queries)
-	'''
-    if len(sys.argv) > 1: 
-        IGBot(sys.argv[1])
-    else:
-        IGBot()
-    '''
+	bot = IGBot(queries)
+
+	def signal_handler(sig, frame):
+		end_time = datetime.datetime.now()
+		print("\n\n\n+++++++++++++++++++++++++++++++++++++++++++++++++++++++\n")
+		print("Session summary for queries", *queries)
+		print("Length of session:", end_time - bot.start_time)
+		print("Session start:", bot.start_time)
+		print("Session end:", end_time)
+		print("Number of cycles", bot.num_cycles)
+		print("Total posts scraped:", len(bot.foundPosts ))
+		print("Total number of errors:", bot.num_errors)
+		sys.exit(0)
+
+	signal.signal(signal.SIGINT, signal_handler)
+	bot.run()
+
+	#signal.signal()
+
