@@ -1,41 +1,45 @@
-from igramscraperFIXED.instagram import Instagram
+#from igramscraperFIXED.instagram import Instagram
 import signal
 import sys
 import socket
 import time
 import json
 import datetime
+import pprint
 from sqlalchemy import create_engine, desc
 from sqlalchemy.orm import sessionmaker
 from createDatabase import Base, Post
 from credentials import username_ig, password_ig
+from TargetWatcher import InstaTagWatcher, InstaLocationWatcher
+from instagram_private_api.instagram_web_api import Client, ClientCompatPatch, ClientError, ClientLoginError
+from MyClient import MyClient
 
 class IGBot:
-	def __init__ (self, queries):
+	def __init__ (self, targets):
 		self.port = 5000
-		self.query_index = 0
+		self.target_index = 0
 		self.num_cycles = 0
 		self.get_rate = 20
 		self.sleep_time = 5
-		self.max_age = 10
 		self.num_errors = 0
 
 		self.foundPosts = {}
 		self.start_time = datetime.datetime.now()
-		tenMinutesAgo = datetime.datetime.now() - datetime.timedelta(minutes=self.max_age)
-		self.latestTimestamps = [tenMinutesAgo.timestamp() for _ in range(len(queries))]
 
 		self.loginInstagram()
 		self.connectToDatabase()
 
 	def run(self):
 		self.startServer()
-		self.handleConnection(queries)
+		self.handleConnection(targets)
 
 	def loginInstagram(self):
-		self.instagram = Instagram()
-		self.instagram.with_credentials(username_ig, password_ig, '.')
-		self.instagram.login()
+		#self.instagram = Instagram()
+
+		#self.instagram.with_credentials(username_ig, password_ig, '.')
+		#self.instagram.login()
+		self.api = MyClient(auto_patch=True, authenticate=True, username=username_ig, password=password_ig)
+
 
 	#create socket object which listens for client connection at <port>
 	def startServer(self):
@@ -52,47 +56,53 @@ class IGBot:
 		self.session = DBSession()
 
 	#Waits for client socket connection, upon connection begins to scrape
-	def handleConnection(self, queries):
+	def handleConnection(self, targets):
+		'''
 		print("Waiting for client connection")
 		while True:
 			self.clientsocket, address = self.socket.accept()
 			print(f"Connection from {address} has been established!")
 			print("Queries:", *queries)
+		'''
 
+		while True:
+			self.processTarget(targets)
 
-			while True:
-				self.sendNewPosts(queries)
-
-	def sendNewPosts(self, queries):
-		recentPosts = self.scrapeInstagram(queries)
-		postDicts = self.sendPostsToClient(recentPosts)
-		self.savePosts(postDicts, queries)
+	def processTarget(self, targets):
+		target = targets[self.target_index]
+		self.checkTarget(target)
+		#postDicts = self.sendPostsToClient(recentPosts)
+		#self.savePosts(postDicts, queries)
 		self.num_cycles += 1
 		self.waitBeforeNextRequest()
-		self.query_index = (self.query_index + 1) % len(queries)
+
+		#update target instagram query
+		self.target_index = (self.target_index + 1) % len(targets)
 
 	#Retrieves <get_rate> num of posts from <queries[self.query_index]>
-	def scrapeInstagram(self, queries):
+	def checkTarget(self, target):
 		print("\n--------------------------------------------")
 		print("Executing at:", datetime.datetime.now())
 		print("Session length:", datetime.datetime.now() - self.start_time)
 		print("Cycle count:", self.num_cycles)
-		query = queries[self.query_index]
-		recPosts = []
-		if query[0] == '#':
-			recPosts = self.scrapeByTag(query[1:])
-		else:
-			recPosts = self.scrapeByLocation(query)
+		#recPosts = []
+		recPosts = target.scrapeTarget(self.api)
+		print("recPosts", recPosts)
+		#print(recPosts)
+		#if query[0] == '#':
+		#	recPosts = self.scrapeByTag(query[1:])
+		#else:
+		#	recPosts = self.scrapeByLocation(query)
 		
-		recPosts.reverse()
-		return recPosts
-
+		#recPosts.reverse()
+		#return recPosts
+	'''
 	def scrapeByTag(self, tag):
 		print("Scraping instagram by hashtag: " + tag )
 		print("Getting maximum", self.get_rate, "new posts...")
 
 		try: 
-			return self.instagram.get_medias_by_tag(tag, count=self.get_rate, min_timestamp=self.latestTimestamps[self.query_index])
+			return self.instagram.get_medias_by_tag(tag, count=self.get_rate, min_timestamp=self.latestTimestamps[self.target_index])
 		except Exception as e:
 			print("ERROR:", e)
 			self.num_errors += 1
@@ -108,7 +118,7 @@ class IGBot:
 			print("ERROR:", e)
 			self.num_errors += 1
 
-		posts = [post for post in posts if post.created_time > self.latestTimestamps[self.query_index]]
+		posts = [post for post in posts if post.created_time > self.latestTimestamps[self.target_index]]
 		return posts
 
 	#Convert media objects to dictionaries, scrape usernames from instagram
@@ -117,7 +127,7 @@ class IGBot:
 		postDict['id'] = post.identifier
 		postDict['user_id'] = post.owner.identifier
 		postDict['link'] = post.link
-		postDict['query'] = queries[self.query_index]
+		postDict['query'] = queries[self.target_index]
 		postDict['image'] = post.image_high_resolution_url
 		postDict['created_time'] = post.created_time
 		postDict['caption'] = post.caption
@@ -171,7 +181,7 @@ class IGBot:
 			self.latestTimestamps[self.query_index] = postDicts[-1]['created_time'] + 1
 			epochDiff = datetime.datetime.now().timestamp() - self.latestTimestamps[self.query_index]
 			print("Newest post:", "{:.1f}".format(epochDiff/60), "minutes ago")
-
+	'''
 	#sleep according to <sleep_time>
 	def waitBeforeNextRequest(self):
 		print("Sleeping", self.sleep_time, "seconds")
@@ -179,15 +189,17 @@ class IGBot:
 
 if __name__ == "__main__":
 
-	queries = ['#culvercity', '213420290', '#culvercitystairs']
-	#queries = ['#culvercity', '213420290']
+	#queries = ['#culvercity', '213420290', '#culvercitystairs']
+	#queries = ['#culvercity', '#culvercitystairs']
+	#queries = ['#fashion']
+	targets = [InstaTagWatcher('culvercity')]
 
-	bot = IGBot(queries)
+	bot = IGBot(targets)
 
 	def signal_handler(sig, frame):
 		end_time = datetime.datetime.now()
 		print("\n\n\n+++++++++++++++++++++++++++++++++++++++++++++++++++++++\n")
-		print("Session summary for queries", *queries)
+		#print("Session summary for queries", *queries)
 		print("Length of session:", end_time - bot.start_time)
 		print("Session start:", bot.start_time)
 		print("Session end:", end_time)
