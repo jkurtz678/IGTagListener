@@ -10,14 +10,12 @@ class TargetWatcher:
 		self.max_age = 10
 		ten_minutes_ago = datetime.datetime.now() - datetime.timedelta(minutes=self.max_age)
 		self.latest_timestamp = ten_minutes_ago.timestamp()
-		
+
 	def scrapeTarget(self):
 		print("values returned for generic: ", self.target)
 
-	def convertResponse(self, response):
+	def convertResponse(self, responsePosts):
 		posts = []
-		responsePosts = response['data']['hashtag']['edge_hashtag_to_media']['edges']
-
 		# filter out posts that have already been found
 		recPosts = [post for post in responsePosts if post['node']['taken_at_timestamp'] > self.latest_timestamp]
 		
@@ -30,13 +28,21 @@ class TargetWatcher:
 			postDict['query'] = self.targetString
 			postDict['image'] = post['node']['display_url']
 			postDict['created_time'] = post['node']['taken_at_timestamp']
-			postDict['caption'] = post['node']['edge_media_to_caption']
+			postDict['caption'] = post['node']['edge_media_to_caption']['edges'][0]['node']['text']
 			postDict['time_scraped'] = datetime.datetime.now()
-			postDict['session_start'] = self.session_start.timestamp()
+			postDict['session_start'] = self.session_start
 			posts.append(postDict)
 		if len(posts) > 0: 
 			self.latest_timestamp = posts[0]['created_time']
+		epochDiff = datetime.datetime.now().timestamp() - self.latest_timestamp
+		print("Newest post:", "{:.1f}".format(epochDiff/60), "minutes ago")
+
+
 		return posts
+
+	def printKeys(self, dict):
+		for key, value in dict.items():
+			print(key)
 
 
 class InstaTagWatcher(TargetWatcher):
@@ -46,12 +52,9 @@ class InstaTagWatcher(TargetWatcher):
 		self.targetString = "instagram:hashtag:" + target
 
 	def scrapeTarget(self, api):
-		#print("values returned for tag: ", self.target)
 		response = api.tag_feed(self.target, count=10)
-		posts = self.convertResponse(response)
+		posts = self.convertResponse(response['data']['hashtag']['edge_hashtag_to_media']['edges'])
 		return posts
-		#self.printResponse(response)
-
 
 	def printResponse(self, response):
 		#print("reels media:",)
@@ -107,17 +110,19 @@ class InstaTagWatcher(TargetWatcher):
 		print(posts[2]['link'])
 		return posts
 
-	def printKeys(self, dict):
-		for key, value in dict.items():
-			print(key)
-
+	
 class InstaLocationWatcher(TargetWatcher):
 	def __init__(self, target, stories=False):
 		TargetWatcher.__init__(self,target)
 		self.stories = stories
+		self.targetString = "instagram:location:" + target
 
-	def scrapeTarget(self):
-		print("values returned for location:", self.target)
+
+	def scrapeTarget(self, api):
+		response = api.location_feed(self.target, count=10)
+		#code.interact(local=locals())
+		posts = self.convertResponse(response['data']['location']['edge_location_to_media']['edges'])
+		return posts
 
 
 #watcher = TagWatcher("culvercity")
