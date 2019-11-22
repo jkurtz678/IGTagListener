@@ -10,8 +10,9 @@ from sqlalchemy import create_engine, desc
 from sqlalchemy.orm import sessionmaker
 from createDatabase import Base, Post
 from credentials import username_ig, password_ig
-from TargetWatcher import InstaTagWatcher, InstaLocationWatcher
+from TargetWatcher import InstaTagWatcher, InstaLocationWatcher, TwitterKeywordWatcher
 from instagram_private_api.instagram_web_api import Client, ClientCompatPatch, ClientError, ClientLoginError
+import twitterscraper
 from MyClient import MyClient
 
 class IGBot:
@@ -22,24 +23,16 @@ class IGBot:
 		self.get_rate = 20
 		self.sleep_time = 5
 		self.num_errors = 0
-
+		instagramClient = MyClient(auto_patch=True, authenticate=True, username=username_ig, password=password_ig)
+		self.apis = {'twitter': twitterscraper, 'instagram': instagramClient}
 		self.foundPosts = {}
 		self.start_time = datetime.datetime.now()
 
-		self.loginInstagram()
 		self.connectToDatabase()
 
 	def run(self):
 		self.startServer()
 		self.handleConnection(targets)
-
-	def loginInstagram(self):
-		#self.instagram = Instagram()
-
-		#self.instagram.with_credentials(username_ig, password_ig, '.')
-		#self.instagram.login()
-		self.api = MyClient(auto_patch=True, authenticate=True, username=username_ig, password=password_ig)
-
 
 	#create socket object which listens for client connection at <port>
 	def startServer(self):
@@ -85,16 +78,18 @@ class IGBot:
 		print("Session length:", datetime.datetime.now() - self.start_time)
 		print("Cycle count:", self.num_cycles)
 		print("--------------------------------------------")
-		print("Checking target:", target.targetString)
+		print("Target:", target.targetString)
 		print("Executing at:", datetime.datetime.now())
-		#recPosts = []
+		
 		try:
-			recPosts = target.scrapeTarget(self.api)
-		except:
-			print("Error occurred scraping target!")
+			recPosts = target.scrapeTarget(self.apis)
+			return recPosts
+		except Exception as e:
+			print("Error occurred scraping target:", e)
 			self.num_errors += 1
-		#print("recPosts", recPosts)
-		return recPosts
+			return []
+		
+		
 
 	#Sends new filtered posts to connected Unity client
 	def sendPostsToClient(self, posts):
@@ -136,7 +131,8 @@ if __name__ == "__main__":
 	#queries = ['#culvercity', '#culvercitystairs']
 	#queries = ['#fashion']
 	#targets = [InstaTagWatcher('culvercity')]
-	targets = [InstaTagWatcher('culvercity'), InstaLocationWatcher('213420290')]
+	#targets = [InstaTagWatcher('culvercity'), InstaLocationWatcher('213420290')]
+	targets = [TwitterKeywordWatcher("culver city")]
 
 	bot = IGBot(targets)
 
