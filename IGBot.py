@@ -12,8 +12,10 @@ from createDatabase import Base, Post
 from credentials import username_ig, password_ig
 from TargetWatcher import InstaTagWatcher, InstaLocationWatcher, TwitterKeywordWatcher
 from instagram_private_api.instagram_web_api import Client, ClientCompatPatch, ClientError, ClientLoginError
-import twitterscraper
 from MyClient import MyClient
+import urllib.request
+from selenium import webdriver
+from selenium.webdriver.firefox.options import Options
 
 class IGBot:
 	def __init__ (self, targets):
@@ -23,12 +25,26 @@ class IGBot:
 		self.get_rate = 20
 		self.sleep_time = 5
 		self.num_errors = 0
-		instagramClient = MyClient(auto_patch=True, authenticate=True, username=username_ig, password=password_ig)
-		self.apis = {'twitter': twitterscraper, 'instagram': instagramClient}
 		self.foundPosts = {}
 		self.start_time = datetime.datetime.now()
-
+		self.apis = {}
+		self.setupAPIs(self.apis)
 		self.connectToDatabase()
+
+
+	def setupAPIs(self, apis):
+		print("Connecting to apis...")
+
+		#instagram
+		instagramClient = MyClient(auto_patch=True, authenticate=True, username=username_ig, password=password_ig)
+		
+		#twitter
+		options = Options()
+		options.headless = True
+		driver = webdriver.Firefox(options=options)
+		
+		#add to dict
+		self.apis = {'twitter': driver, 'instagram': instagramClient}
 
 	def run(self):
 		self.startServer()
@@ -132,7 +148,7 @@ if __name__ == "__main__":
 	#queries = ['#fashion']
 	#targets = [InstaTagWatcher('culvercity')]
 	#targets = [InstaTagWatcher('culvercity'), InstaLocationWatcher('213420290')]
-	targets = [TwitterKeywordWatcher("culver city")]
+	targets = [InstaTagWatcher('culvercity'), InstaLocationWatcher('213420290'), TwitterKeywordWatcher("culver city")]
 
 	bot = IGBot(targets)
 

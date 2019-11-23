@@ -2,3 +2,4 @@ instagram.db
 __pycache__
 credentials.py
 .jacksonkurtz2015.txt
+geckodriver.log

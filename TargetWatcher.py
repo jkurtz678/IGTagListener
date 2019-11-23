@@ -2,6 +2,8 @@
 import reprlib
 import code
 import datetime
+from bs4 import BeautifulSoup
+
 
 class TargetWatcher:
 	def __init__(self, target):
@@ -39,42 +41,36 @@ class TargetWatcher:
 
 		return posts
 
-	def convertTwitterResponse(self, responseTweets):
+	def convertTwitterResponse(self, timeline):
 		media = []
-		recTweets = [tweet for tweet in responseTweets if tweet.timestamp_epochs > self.latest_timestamp]
-		print("num new tweets found:", len(recTweets) )
-		print("first link:", 'https://www.twitter.com' + responseTweets[0].tweet_url)
-		code.interact(local=locals())
-
-		for tweet in recTweets:
-			tweetDict = {}
-			tweetDict['id'] = tweet.tweet_id
-			tweetDict['user_id'] = tweet.user_id
-			tweetDict['link'] = 'https://www.twitter.com' + tweet.tweet_url
-			tweetDict['query'] = self.targetString
-			img_str = ""
-			for img_url in tweet.img_urls:
-				img_str += (img_url + " ")
-			if len(img_str) > 0:
-				img_str = img_str[:-1]
-
-			tweetDict['image'] = img_str
-			tweetDict['created_time'] = tweet.timestamp_epochs
-			tweetDict['caption'] = tweet.text
-			tweetDict['time_scraped'] = datetime.datetime.now()
-			tweetDict['session_start'] = self.session_start
-			media.append(tweetDict)
+		for tweet in timeline:
+			if float(tweet.select('._timestamp')[0]['data-time']) > self.latest_timestamp:
+				tweetDict = {}
+				#name = tweet.select('.fullname')[0].text
+				try:
+					tweetDict['id'] = tweet['data-item-id']
+					tweetDict['username'] = tweet.select('.username')[0].text
+					tweetDict['user_id'] = tweet.select('.js-user-profile-link')[0]['data-user-id']
+					tweetDict['caption'] = tweet.select('.tweet-text')[0].text
+					tweetDict['created_time'] = tweet.select('._timestamp')[0]['data-time']
+					tweetDict['link'] = "https://twitter.com" + tweet.select('.original-tweet')[0]['data-permalink-path']
+					tweetDict['query'] = self.targetString
+					tweetDict['time_scraped'] = datetime.datetime.now()
+					tweetDict['session_start'] = self.session_start
+					tweetDict['image'] = ""
+					media.append(tweetDict)
+				except Exception as e:
+					print("Error scraping tweet!", e)
 		if len(media) > 0: 
-			self.latest_timestamp = media[0]['created_time']
+			print("first link:", media[0]['link'])
+			self.latest_timestamp = float(media[0]['created_time'])
 		epochDiff = datetime.datetime.now().timestamp() - self.latest_timestamp
 		print("Newest post:", "{:.1f}".format(epochDiff/60), "minutes ago")
 		return media
 
-
 	def printKeys(self, dict):
 		for key, value in dict.items():
 			print(key)
-
 
 class InstaTagWatcher(TargetWatcher):
 	def __init__(self, target, stories=False):
@@ -108,9 +104,15 @@ class TwitterKeywordWatcher(TargetWatcher):
 		self.targetString = "twitter:query:" + target
 
 	def scrapeTarget(self, apis):
+		first_url = 'https://twitter.com/search?f=tweets&vertical=default&q='
+		mid_url = self.target.replace(' ', '%20')
+		last_url = '&src=typd'
+		url = first_url + mid_url + last_url
+		print("url:", url)
 		twitterscraper = apis['twitter']
-		start_date = datetime.date.today()
-		end_date = datetime.date.today() + datetime.timedelta(days=1)
-		listTweets = twitterscraper.query_tweets(self.target, 40, begindate=start_date, enddate=end_date)
-		tweets = self.convertTwitterResponse(listTweets)
+		twitterscraper.get(url)
+		source = twitterscraper.page_source
+		soup = BeautifulSoup(source, 'html.parser')
+		timeline = soup.select('#timeline li.stream-item')
+		tweets = self.convertTwitterResponse(timeline)
 		return tweets
